@@ -1306,7 +1306,6 @@ the specific language governing permissions and limitations under the Apache Lic
         // abstract
         close: function () {
             if (!this.opened()) return;
-
             var cid = this.containerId,
                 scroll = "scroll." + cid,
                 resize = "resize."+cid,
@@ -2691,23 +2690,48 @@ the specific language governing permissions and limitations under the Apache Lic
             return this.search.hasClass("select2-focused");
         },
 
+        bindCloseEvents: function() {
+            this.container.find(".select2-search-choice-close")
+                .on("mousedown", killEvent)
+                .on("click dblclick", this.bind(function (e) {
+                    if (!this.isInterfaceEnabled()) return;
+                    $(e.target).closest(".select2-search-choice").fadeOut('fast', this.bind(function(){
+                        this.unselect($(e.target));
+                        this.selection.find(".select2-search-choice-focus").removeClass("select2-search-choice-focus");
+                        this.close();
+                        this.focusSearch();
+                    })).dequeue();
+                    killEvent(e);
+                })).on("focus", this.bind(function () {
+                    if (!this.isInterfaceEnabled()) return;
+                    this.container.addClass("select2-container-active");
+                    this.dropdown.addClass("select2-drop-active");
+                }));
+        },
+
         // multi
         updateSelection: function (data) {
             var ids = [], filtered = [], self = this;
 
             // filter out duplicates
-            $(data).each(function () {
+            $(data).each2(function () {
                 if (indexOf(self.id(this), ids) < 0) {
                     ids.push(self.id(this));
                     filtered.push(this);
                 }
             });
+            self.value = ids;
             data = filtered;
 
             this.selection.find(".select2-search-choice").remove();
-            $(data).each(function () {
-                self.addSelectedChoice(this);
+            var accum = ""
+            $(data).each2(function () {
+                accum = accum + self.addSelectedChoice(this);
             });
+            $(accum).insertBefore(self.searchContainer);
+            self.setVal(ids);
+            // TODO need to set the .data() for each item structure
+            self.bindCloseEvents();
             self.postprocessResults();
         },
 
@@ -2729,7 +2753,12 @@ the specific language governing permissions and limitations under the Apache Lic
 
             if (!this.triggerSelect(data)) { return; }
 
-            this.addSelectedChoice(data);
+            var node = this.addSelectedChoice(data);
+            $(node).insertBefore(this.searchContainer);
+            this.bindCloseEvents($(node));
+            var val = this.getVal();
+            val.push(data.id);
+            this.setVal(val);
 
             this.opts.element.trigger({ type: "selected", val: this.id(data), choice: data });
 
@@ -2770,56 +2799,31 @@ the specific language governing permissions and limitations under the Apache Lic
         },
 
         addSelectedChoice: function (data) {
-            var enableChoice = !data.locked,
-                enabledItem = $(
-                    "<li class='select2-search-choice'>" +
-                    "    <div></div>" +
-                    "    <a href='#' onclick='return false;' class='select2-search-choice-close' tabindex='-1'></a>" +
-                    "</li>"),
-                disabledItem = $(
-                    "<li class='select2-search-choice select2-locked'>" +
-                    "<div></div>" +
-                    "</li>");
-            var choice = enableChoice ? enabledItem : disabledItem,
-                id = this.id(data),
-                val = this.getVal(),
-                formatted,
-                cssClass;
-
-            formatted=this.opts.formatSelection(data, choice.find("div"), this.opts.escapeMarkup);
+            var formatted = undefined; //this.opts.formatSelection(data, choice.find("div"), this.opts.escapeMarkup);
+            var val = this.getVal();
+            var id = this.id(data);
             if (formatted != undefined) {
-                choice.find("div").replaceWith("<div>"+formatted+"</div>");
+                var label = formatted;
+            } else {
+                var label = data.text;
             }
-            cssClass=this.opts.formatSelectionCssClass(data, choice.find("div"));
-            if (cssClass != undefined) {
-                choice.addClass(cssClass);
+            var cssClass = data.css ? data.css : "";
+            // Need to delete the element attribute as this causes
+            // circular dependencies and can't be serialized
+            delete data["element"];
+            var serialized_data = JSON.stringify(data);
+
+            if (!data.locked) {
+                var html_str = "<li class='select2-search-choice " + cssClass + "' data-select2-data='" + serialized_data + "'>" +
+                               "    <div>" + label + "</div>" +
+                               "    <a href='#' onclick='return false;' class='select2-search-choice-close' tabindex='-1'></a>" + 
+                               "</li>";
+            } else {
+                var html_str = "<li class='select2-search-choice " + cssClass + "'" +
+                               "    <div>" + label + "</div>" +
+                               "</li>";
             }
-
-            if(enableChoice){
-              choice.find(".select2-search-choice-close")
-                  .on("mousedown", killEvent)
-                  .on("click dblclick", this.bind(function (e) {
-                  if (!this.isInterfaceEnabled()) return;
-
-                  $(e.target).closest(".select2-search-choice").fadeOut('fast', this.bind(function(){
-                      this.unselect($(e.target));
-                      this.selection.find(".select2-search-choice-focus").removeClass("select2-search-choice-focus");
-                      this.close();
-                      this.focusSearch();
-                  })).dequeue();
-                  killEvent(e);
-              })).on("focus", this.bind(function () {
-                  if (!this.isInterfaceEnabled()) return;
-                  this.container.addClass("select2-container-active");
-                  this.dropdown.addClass("select2-drop-active");
-              }));
-            }
-
-            choice.data("select2-data", data);
-            choice.insertBefore(this.searchContainer);
-
-            val.push(id);
-            this.setVal(val);
+            return html_str;
         },
 
         // multi
@@ -2833,15 +2837,16 @@ the specific language governing permissions and limitations under the Apache Lic
             if (selected.length === 0) {
                 throw "Invalid argument: " + selected + ". Must be .select2-search-choice";
             }
-
-            data = selected.data("select2-data");
-
+            // Data is stored on the element html in the
+            // data-select2-data attribute
+            data = $.parseJSON(selected.attr("data-select2-data"));
+  
             if (!data) {
                 // prevent a race condition when the 'x' is clicked really fast repeatedly the event can be queued
                 // and invoked on an element already removed
                 return;
             }
-
+          
             index = indexOf(this.id(data), val);
 
             if (index >= 0) {
