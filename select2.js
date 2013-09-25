@@ -2730,7 +2730,6 @@ the specific language governing permissions and limitations under the Apache Lic
             });
             $(accum).insertBefore(self.searchContainer);
             self.setVal(ids);
-            // TODO need to set the .data() for each item structure
             self.bindCloseEvents();
             self.postprocessResults();
         },
