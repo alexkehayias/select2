@@ -2810,7 +2810,7 @@ the specific language governing permissions and limitations under the Apache Lic
             // Need to delete the element attribute as this causes
             // circular dependencies and can't be serialized
             delete data["element"];
-            var serialized_data = JSON.stringify(data);
+            var serialized_data = JSON.stringify(data).replace(/'/g, "\\'");
 
             if (!data.locked) {
                 var html_str = "<li class='select2-search-choice " + cssClass + "' data-select2-data='" + serialized_data + "'>" +
